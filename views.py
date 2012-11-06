@@ -1,20 +1,18 @@
 # -*- coding: utf-8 -*-
 import os
 import json
-import datetime
 import xlrd
 import json
 import webapp2
+from datetime import datetime
 from models import Menu
 from google.appengine.api import memcache
 from google.appengine.ext import db
 from google.appengine.api import memcache
 
-
-
 class MainHandler(webapp2.RequestHandler):
     def get(self):
-        self.response.out.write("PositaGrill")
+        self.response.out.write('PositaGrill')
 
 class UploadHandler(webapp2.RequestHandler):
     START_OFFSET = 3
@@ -50,18 +48,55 @@ class UploadHandler(webapp2.RequestHandler):
                     cell_value = worksheet.cell_value(row, current_column)
 
                     if cell_type == 3: # datetime
-                        date = datetime.datetime(*xlrd.xldate_as_tuple(cell_value, workbook.datemode)).date()
+                        date = datetime(*xlrd.xldate_as_tuple(cell_value, workbook.datemode)).date()
                     else:
                         foods.append(cell_value)
 
-                menu = Menu()
-                menu.foods = foods
-                menu.date = date
-                menu.save()
+                try:
+                    menu = Menu()
+                    menu.foods = foods
+                    menu.day = date.day
+                    menu.month = date.month
+                    menu.year = date.year
+                    menu.save()
+                except:
+                    pass
 
                 current_row += self.ROW_OFFSET
 
-class MenuHandler(webapp2.RequestHandler):
+        self.response.write('Ok')
+
+class MonthlyMenuHandler(webapp2.RequestHandler):
+    def get(self, month, year):
+        cache_key = 'monthly_{}_{}'.format(month, year)
+        result = memcache.get(cache_key)
+        if result is None:
+            result = self.render(month, year)
+            if not memcache.add(key=cache_key, value=result):
+                logging.error('Memcache set failed.')
+        self.response.out.write(result)
+
+    def render(self, month, year):
+        menu = Menu.gql('WHERE month = {} AND year = {}'.format(month, year))
+        if not menu:
+            return '[]'
+        else:
+            return json.dumps([m.to_dict() for m in menu])
+
+class DailyMenuHandler(webapp2.RequestHandler):
     def get(self, day, month, year):
-        self.response.out.write(json.dumps(Menu.all()))
+        cache_key = 'daily_{}_{}_{}'.format(day, month, year)
+        result = memcache.get(cache_key)
+        if result is None:
+            result = self.render(day, month, year)
+            if not memcache.add(key=cache_key, value=result):
+                logging.error('Memcache set failed.')
+        self.response.out.write(result)
+
+    def render(self, day, month, year):
+        menu = Menu.gql('WHERE day = {} AND month = {} AND year = {}'.format(day, month, year))
+        if not menu:
+            return '[]'
+        else:
+            return json.dumps([m.to_dict() for m in menu])
 
